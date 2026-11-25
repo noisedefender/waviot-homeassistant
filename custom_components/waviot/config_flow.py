@@ -13,9 +13,12 @@ from homeassistant.core import callback
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
-    PasswordSelector,
     TextSelector,
 )
+
+# PasswordSelector was removed in Home Assistant 2026; the text selector with
+# type="password" is the same input field and works on every supported version.
+PASSWORD_SELECTOR = TextSelector({"type": "password"})
 
 from .api import WaviotApi, WaviotAuthError, WaviotError, WaviotTwoFactorError
 from .const import (
@@ -106,7 +109,7 @@ class WaviotConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_LOGIN): TextSelector(),
-                    vol.Optional(CONF_PASSWORD): PasswordSelector(),
+                    vol.Optional(CONF_PASSWORD): PASSWORD_SELECTOR,
                     vol.Optional(CONF_API_KEY): TextSelector(),
                     vol.Optional(CONF_ELEMENT_ID): TextSelector(),
                 }
@@ -124,12 +127,15 @@ class WaviotConfigFlow(ConfigFlow, domain=DOMAIN):
 class WaviotOptionsFlow(OptionsFlow):
     """Adjust how often the cabinet is polled."""
 
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        self._config_entry = config_entry
+    def __init__(self, config_entry: ConfigEntry | None = None) -> None:
+        # Older Home Assistant passes the entry to the constructor, newer
+        # versions set it on the flow itself.
+        self._config_entry = config_entry or getattr(self, "config_entry", None)
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        entry = self._config_entry or self.config_entry  # type: ignore[attr-defined]
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
@@ -139,11 +145,9 @@ class WaviotOptionsFlow(OptionsFlow):
                 {
                     vol.Optional(
                         CONF_POLL_INTERVAL,
-                        default=self._config_entry.options.get(
+                        default=entry.options.get(
                             CONF_POLL_INTERVAL,
-                            self._config_entry.data.get(
-                                CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL_MINUTES
-                            ),
+                            entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL_MINUTES),
                         ),
                     ): NumberSelector(
                         NumberSelectorConfig(

@@ -74,7 +74,7 @@ class WaviotEntity(CoordinatorEntity[WaviotCoordinator]):
 class WaviotChannelEntity(WaviotEntity):
     """Cumulative meter reading of one channel."""
 
-    _attr_state_class = SensorStateClass.TOTAL_INCREPING
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
 
     def __init__(
         self, coordinator: WaviotCoordinator, device: WaviotDevice, channel: WaviotChannel
@@ -176,7 +176,6 @@ class WaviotSignalEntity(WaviotEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "dBm"
     _attr_entity_registry_enabled_default = False
-    _attr_entity_registry_visible_default = False
 
     def __init__(self, coordinator: WaviotCoordinator, device: WaviotDevice) -> None:
         super().__init__(coordinator, device)
