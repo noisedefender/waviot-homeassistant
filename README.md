@@ -1,2 +1,2 @@
 # waviot-homeassistant
-foк Home assistant to monitor electricity consumption from the WAVIoT personal account.
+is the intgration for Home assistant to monitor electricity consumption from the WAVIoT personal account.
