@@ -1,0 +1,13 @@
+{
+  "domain": "waviot",
+  "name": "WAVIoT",
+  "codeowners": ["@noise-defender"],
+  "config_flow": true,
+  "documentation": "https://github.com/noise-defender/waviot-homeassistant",
+  "integration_category": "sensor",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/noise-defender/waviot-homeassistant/issues",
+  "requirements": [],
+  "version": "0.1.0",
+  "homeassistant": "2024.6.0"
+}

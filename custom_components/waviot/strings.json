@@ -1,0 +1,46 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "WAVIoT personal cabinet",
+        "description": "Credentials for your cabinet at lk.waviot.ru. The personal API key can be copied from {api_docs} and used instead of the password.",
+        "data": {
+          "login": "Login (e-mail or phone)",
+          "password": "Password",
+          "api_key": "API key (optional)",
+          "element_id": "Element id (optional)"
+        },
+        "data_description": {
+          "login": "The e-mail address or phone number you use to sign in.",
+          "password": "Cabinet password. Not needed if an API key is given.",
+          "api_key": "Personal key shown on https://lk.waviot.ru/api/. If set, no password login is performed.",
+          "element_id": "Tree element (house) id. By default the element shown on the cabinet start page is used."
+        }
+      }
+    },
+    "error": {
+      "missing_credentials": "A password or an API key is required.",
+      "invalid_auth": "Invalid login or password.",
+      "two_factor": "This account requires an SMS confirmation code on every login. Disable two-factor authentication in the cabinet, or provide the API key.",
+      "cannot_connect": "Could not read data from the personal cabinet.",
+      "no_meters": "No meters with readings on the selected element.",
+      "invalid_element_id": "The element id must be a number."
+    },
+    "abort": {
+      "already_configured": "This account is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "WAVIoT options",
+        "data": {
+          "poll_interval_minutes": "Polling interval (minutes)"
+        },
+        "data_description": {
+          "poll_interval_minutes": "WAVIoT meters report about once an hour, so polling more often adds no new data."
+        }
+      }
+    }
+  }
+}

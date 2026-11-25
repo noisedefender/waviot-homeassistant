@@ -1,0 +1,188 @@
+"""Sensor platform for the WAVIoT personal cabinet."""
+
+from __future__ import annotations
+
+from datetime import datetime, UTC
+
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from . import get_coordinator
+from .const import DOMAIN
+from .coordinator import WaviotCoordinator
+from .parsing import WaviotChannel, WaviotDevice
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    coordinator: WaviotCoordinator = get_coordinator(hass, entry)
+
+    entities: list[SensorEntity] = []
+    for device in coordinator.data.values():
+        for channel in device.channels.values():
+            entities.append(WaviotChannelEntity(coordinator, device, channel))
+            if channel.channel_id in device.consumption and channel.channel_id.endswith(
+                "tsum"
+            ):
+                entities.append(
+                    WaviotConsumptionEntity(coordinator, device, channel)
+                )
+
+        entities.append(WaviotLastReadingEntity(coordinator, device))
+        if device.battery is not None:
+            entities.append(WaviotBatteryEntity(coordinator, device))
+        if device.temperature is not None:
+            entities.append(WaviotTemperatureEntity(coordinator, device))
+        if device.rssi is not None:
+            entities.append(WaviotSignalEntity(coordinator, device))
+
+    async_add_entities(entities)
+
+
+class WaviotEntity(CoordinatorEntity[WaviotCoordinator]):
+    """Base entity bound to one meter."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: WaviotCoordinator, device: WaviotDevice) -> None:
+        super().__init__(coordinator)
+        self._device = device
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, device.sn)},
+            "name": device.name,
+            "manufacturer": "WAVIoT",
+            "model": device.model,
+        }
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.last_update_success and self._device.sn in (
+            self.coordinator.data or {}
+        )
+
+
+class WaviotChannelEntity(WaviotEntity):
+    """Cumulative meter reading of one channel."""
+
+    _attr_state_class = SensorStateClass.TOTAL_INCREPING
+
+    def __init__(
+        self, coordinator: WaviotCoordinator, device: WaviotDevice, channel: WaviotChannel
+    ) -> None:
+        super().__init__(coordinator, device)
+        self._channel = channel
+        self._attr_unique_id = f"{device.sn}_{channel.channel_id}"
+        self._attr_name = channel.label
+        self._attr_native_unit_of_measurement = channel.unit
+        if channel.unit == "kWh":
+            self._attr_device_class = SensorDeviceClass.ENERGY
+
+    @property
+    def native_value(self) -> float | None:
+        current = self._device.channels.get(self._channel.channel_id)
+        return current.value if current else None
+
+
+class WaviotConsumptionEntity(WaviotEntity):
+    """Energy or volume consumed over the last day, taken from the cabinet balance."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self, coordinator: WaviotCoordinator, device: WaviotDevice, channel: WaviotChannel
+    ) -> None:
+        super().__init__(coordinator, device)
+        self._channel_id = channel.channel_id
+        self._attr_unique_id = f"{device.sn}_{channel.channel_id}_daily"
+        self._attr_name = f"{channel.label} per day"
+        self._attr_native_unit_of_measurement = channel.unit
+        if channel.unit == "kWh":
+            self._attr_device_class = SensorDeviceClass.ENERGY
+
+    @property
+    def native_value(self) -> float | None:
+        return self._device.consumption.get(self._channel_id)
+
+
+class WaviotLastReadingEntity(WaviotEntity):
+    """When the meter last reported to the cabinet."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, coordinator: WaviotCoordinator, device: WaviotDevice) -> None:
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.sn}_last_reading"
+        self._attr_name = "Last reading"
+
+    @property
+    def native_value(self) -> datetime | None:
+        ts = self._device.last_station_time
+        if not ts:
+            return None
+        return datetime.fromtimestamp(ts, UTC)
+
+
+class WaviotBatteryEntity(WaviotEntity):
+    """Voltage of the meter modem battery."""
+
+    _attr_device_class = SensorDeviceClass.VOLTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "V"
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, coordinator: WaviotCoordinator, device: WaviotDevice) -> None:
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.sn}_battery"
+        self._attr_name = "Battery voltage"
+
+    @property
+    def native_value(self) -> float | None:
+        return self._device.battery
+
+
+class WaviotTemperatureEntity(WaviotEntity):
+    """Temperature reported by the meter modem."""
+
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "°C"
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, coordinator: WaviotCoordinator, device: WaviotDevice) -> None:
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.sn}_temperature"
+        self._attr_name = "Modem temperature"
+
+    @property
+    def native_value(self) -> float | None:
+        return self._device.temperature
+
+
+class WaviotSignalEntity(WaviotEntity):
+    """Radio signal strength of the meter modem."""
+
+    _attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "dBm"
+    _attr_entity_registry_enabled_default = False
+    _attr_entity_registry_visible_default = False
+
+    def __init__(self, coordinator: WaviotCoordinator, device: WaviotDevice) -> None:
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.sn}_rssi"
+        self._attr_name = "Signal strength"
+
+    @property
+    def native_value(self) -> int | None:
+        return self._device.rssi
