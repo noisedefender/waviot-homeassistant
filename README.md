@@ -1,2 +1,2 @@
 # waviot-homeassistant
-is the intgration for Home assistant to monitor electricity consumption from the WAVIoT personal account.
+Custom-интеграция для Home Assistant, которая читает показания электросчётчика из личного кабинета WAVIoT (lk.waviot.ru) — там же, где их показывает ваш дом.
