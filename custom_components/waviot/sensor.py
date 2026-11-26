@@ -22,11 +22,16 @@ from .parsing import WaviotChannel, WaviotDevice
 
 def channel_icon(channel_id: str, unit: str) -> str:
     """Icon for a meter channel, picked from what the meter measures."""
-    if channel_id.startswith("gas"):
+    norm = channel_id.lower()
+    if norm == "1053":
         return "mdi:fire"
-    if channel_id.startswith("water"):
+    if norm in ("159", "160"):
         return "mdi:water"
-    if channel_id.startswith("electro") or unit == "kWh":
+    if norm.startswith("gas"):
+        return "mdi:fire"
+    if norm.startswith("water"):
+        return "mdi:water"
+    if norm.startswith("electro") or unit == "kWh":
         return "mdi:flash"
     return "mdi:gauge"
 

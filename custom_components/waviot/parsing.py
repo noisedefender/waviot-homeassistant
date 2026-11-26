@@ -22,6 +22,27 @@ CONSUMPTION_WINDOW = DAY_SECONDS
 # Timestamps above this are milliseconds rather than seconds.
 _MS_THRESHOLD = 1_000_000_000_000
 
+# Water and gas channels are addressed by numeric channel ids, not by name.
+CHANNEL_NAMES = {
+    "159": "Hot water",
+    "160": "Cold water",
+    "1053": "Gas",
+    "heat_power": "Heat energy",
+}
+
+
+def channel_label(channel_id: str, unit: str) -> str:
+    """Human readable name of a cumulative channel."""
+    norm = channel_id.lower()
+    if norm in CHANNEL_NAMES:
+        return CHANNEL_NAMES[norm]
+    parts = channel_id.rsplit("_t", 1)
+    if len(parts) == 2 and parts[1].isdigit():
+        return f"Tariff {parts[1]}"
+    if channel_id.endswith("tsum"):
+        return "Total energy" if unit == "kWh" else "Total volume"
+    return channel_id.replace("_", " ").title()
+
 
 @dataclass
 class WaviotChannel:
@@ -53,16 +74,6 @@ class WaviotDevice:
     last_station_time: int | None
     channels: dict[str, WaviotChannel] = field(default_factory=dict)
     consumption: dict[str, float] = field(default_factory=dict)
-
-
-def channel_label(channel_id: str, unit: str) -> str:
-    """Human readable name of a cumulative channel."""
-    parts = channel_id.rsplit("_t", 1)
-    if len(parts) == 2 and parts[1].isdigit():
-        return f"Tariff {parts[1]}"
-    if channel_id.endswith("tsum"):
-        return "Total energy" if unit == "kWh" else "Total volume"
-    return channel_id.replace("_", " ").title()
 
 
 def build_devices(

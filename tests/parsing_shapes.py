@@ -67,6 +67,7 @@ CASES = [
     ("unit only, readings from get_values", {"electro_ac_p_lsum_t1": {"unit_id": "кВт·ч"}}, 123.5, {"70B3B9": {"electro_ac_p_lsum_t1": {"1700000000": 120.0, "1700003600": 123.5}}}),
     ("no registrator value, balance end", {"electro_ac_p_lsum_tsum": {"unit_id": "кВт·ч"}}, 2500.0, None),
     ("water in cubic metres", {"water_hot_tsum": {"last_value": "12,3", "unit_id": "м³"}}, 12.3, None),
+    ("numeric water channel id", {"160": {"unit_id": "м³", "1700000000": 4.1, "1700003600": 4.4}}, 4.4, None),
     ("balance keyed by uppercase modem id", {"electro_ac_p_lsum_t1": {"unit_id": "кВт·ч"}}, 2500.0, None),
 ]
 
@@ -83,6 +84,10 @@ for label, registrators, expected, values in CASES:
         failures.append(f"{label}: got {channel.value}, expected {expected}")
     if channel.channel_id not in device.consumption:
         failures.append(f"{label}: daily consumption missing")
+
+labelled = parse({"160": {"unit_id": "м³", "1700003600": 4.4}})
+if next(iter(labelled.values())).channels["160"].label != "Cold water":
+    failures.append("numeric channel 160 should be named Cold water")
 
 # Daily consumption derived from readings when the cabinet has no balance row.
 def parse_without_balance(registrators: dict, registrator_values: dict) -> dict:
