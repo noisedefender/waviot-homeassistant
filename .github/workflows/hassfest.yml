@@ -1,0 +1,17 @@
+name: "Validate with Hassfest"
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  hassfest:
+    name: Hassfest validation
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: Check out
+        uses: "actions/checkout@v4"
+      - name: Validate the manifest and translations
+        uses: "home-assistant/actions/hassfest@master"
