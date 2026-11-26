@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "WAVIoT personal cabinet",
-        "description": "Credentials for your cabinet at lk.waviot.ru. The personal API key can be copied from {api_docs} and used instead of the password.",
+        "description": "Credentials for your cabinet at lk.waviot.ru. The personal API key can be copied from the API page of the cabinet and used instead of the password.",
         "data": {
           "login": "Login (e-mail or phone)",
           "password": "Password",
@@ -13,7 +13,7 @@
         "data_description": {
           "login": "The e-mail address or phone number you use to sign in.",
           "password": "Cabinet password. Not needed if an API key is given.",
-          "api_key": "Personal key shown on https://lk.waviot.ru/api/. If set, no password login is performed.",
+          "api_key": "Personal key shown on the API page of the cabinet. If set, no password login is performed.",
           "element_id": "Tree element (house) id. By default the element shown on the cabinet start page is used."
         }
       }
