@@ -203,7 +203,27 @@ class WaviotApi:
                 if candidate == modem_id.lower():
                     raise
                 continue
-            return payload.get("registrators") or {}
+            return payload.get("registrators") or payload.get("data") or {}
+        return {}
+
+    async def channel_values(self, modem_id: str, channel: str, from_ts: int, to_ts: int) -> Any:
+        """Readings of one meter channel, for meters get_values does not cover.
+
+        ``api.data/get_modem_channel_values/`` returns ``values`` as a timestamp
+        -> value map; some cabinets put that map at the top of the payload.
+        """
+        for candidate in (modem_id, modem_id.lower()):
+            try:
+                payload = await self.call(
+                    "api.data/get_modem_channel_values/",
+                    {"modem_id": candidate, "channel": channel, "from": from_ts, "to": to_ts},
+                )
+            except WaviotApiError:
+                if candidate == modem_id.lower():
+                    raise
+                continue
+            values = payload.get("values", payload)
+            return values if isinstance(values, (dict, list)) else {}
         return {}
 
     async def balance(self, element_id: int, from_ts: int, to_ts: int) -> dict:
@@ -212,7 +232,7 @@ class WaviotApi:
             "api.data/get_balance_info/",
             {"elementId": element_id, "from": from_ts, "to": to_ts},
         )
-        return payload.get("balance", {})
+        return payload.get("balance") or payload.get("balances") or {}
 
 
 def _deepest_leaf(node: dict) -> int | None:

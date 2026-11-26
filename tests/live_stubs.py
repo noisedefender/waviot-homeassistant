@@ -46,6 +46,11 @@ def stub_homeassistant() -> None:
         def __init__(self, hass, logger, name=None, update_interval=None):
             self._logger = logger
             self.update_interval = update_interval
+            self.data = None
+            self.last_update_success = True
+
+        def async_add_listener(self, callback):
+            return lambda: None
 
     update.DataUpdateCoordinator = DataUpdateCoordinator
     update.UpdateFailed = RuntimeError

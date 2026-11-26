@@ -67,6 +67,34 @@ class WaviotCoordinator(DataUpdateCoordinator[dict[str, WaviotDevice]]):
 
         devices = build_devices(info, modems, balance, self.element_id, readings, now)
 
+        # Meters whose readings are not in get_values: ask for each channel directly.
+        missing = [
+            (device.modem_id, channel.channel_id)
+            for device in devices.values()
+            for channel in device.channels.values()
+            if channel.value is None and device.modem_id
+        ]
+        for modem_id, channel_id in missing[:20]:
+            try:
+                series = await self._api.channel_values(
+                    modem_id, channel_id, now - READING_WINDOW_SECONDS, now
+                )
+            except WaviotError as err:
+                _LOGGER.debug("WAVIoT: no channel values for %s/%s: %s", modem_id, channel_id, err)
+                continue
+            if series:
+                readings.setdefault(modem_id, {})[channel_id] = series
+        if missing:
+            devices = build_devices(info, modems, balance, self.element_id, readings, now)
+
+        _LOGGER.debug(
+            "WAVIoT payload shapes: element=%s registrators=%s values=%s balance=%s",
+            self.element_id,
+            _shape(info.get("devices")),
+            _shape(readings),
+            _shape(balance),
+        )
+
         if not devices:
             raise UpdateFailed(
                 f"No meters with readable readings found for element {self.element_id}"
@@ -79,10 +107,26 @@ class WaviotCoordinator(DataUpdateCoordinator[dict[str, WaviotDevice]]):
         ):
             _LOGGER.warning(
                 "WAVIoT: element %s has %d meter(s) but the cabinet returned no "
-                "readings for them",
+                "readings for them. Payload shapes: registrators=%s values=%s balance=%s",
                 self.element_id,
                 len(devices),
+                _shape(info.get("devices")),
+                _shape(readings),
+                _shape(balance),
             )
 
         _LOGGER.debug("WAVIoT: %d meter(s) on element %s", len(devices), self.element_id)
         return devices
+
+
+def _shape(payload: Any, depth: int = 2) -> str:
+    """Compact description of a cabinet payload, for debug logging."""
+    if isinstance(payload, dict):
+        if depth <= 0:
+            return "dict"
+        return "{" + ", ".join(
+            f"{key}: {_shape(value, depth - 1)}" for key, value in list(payload.items())[:6]
+        ) + "}"
+    if isinstance(payload, list):
+        return f"[{len(payload)} {_shape(payload[0], depth - 1) if payload else ''}]"
+    return type(payload).__name__

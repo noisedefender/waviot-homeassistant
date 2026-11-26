@@ -16,6 +16,9 @@ TOTAL_UNITS = {"kWh", "m³"}
 VALUE_KEYS = ("last_value", "value", "val", "last", "current_value", "end")
 TIMESTAMP_KEYS = ("last_value_timestamp", "timestamp", "time", "ts", "event_time")
 
+# Containers the cabinet wraps readings in.
+NESTED_KEYS = ("values", "data", "registrators", "channel", "packets", "history")
+
 # Values older than this are not usable for the daily consumption fallback.
 CONSUMPTION_WINDOW = DAY_SECONDS
 
@@ -104,6 +107,10 @@ def build_devices(
         modem_id = _norm(raw.get("modem_id"))
         modem = modems_by_id.get(modem_id, {})
         modem_values = values_by_modem.get(modem_id, {})
+        # get_values sometimes nests the registrators one level under the modem id.
+        nested = modem_values.get(modem_id)
+        if isinstance(nested, dict):
+            modem_values = nested
 
         channels: dict[str, WaviotChannel] = {}
         for channel_id, reg in (raw.get("registrators") or {}).items():
@@ -186,13 +193,30 @@ def _lower_keys(mapping: Any) -> dict[str, Any]:
 def _series(payload: Any) -> list[tuple[int, float]]:
     """timestamp -> value pairs of one registrator, oldest first.
 
-    get_values and get_modem_channel_values return readings as
-    ``{"<unix timestamp>": <value>}``, sometimes nested under ``values``.
+    The cabinet hands readings in three shapes: a ``{"<unix timestamp>": value}``
+    map, a list of ``{"timestamp": .., "value": ..}`` entries, or a plain number.
+    Any of them may be nested under ``values``/``data``/``registrators``.
     """
+    if isinstance(payload, str):
+        value = _as_float(payload)
+        return [(0, value)] if value is not None else []
+
+    if isinstance(payload, (int, float)):
+        value = _as_float(payload)
+        return [(0, value)] if value is not None else []
+
+    if isinstance(payload, (list, tuple)):
+        pairs = [pair for pair in (_entry_pair(item) for item in payload) if pair]
+        pairs.sort(key=lambda pair: pair[0])
+        return pairs
+
     if isinstance(payload, dict):
-        nested = payload.get("values") or payload.get("data")
-        if isinstance(nested, dict):
-            payload = nested
+        for key in NESTED_KEYS:
+            nested = payload.get(key)
+            if isinstance(nested, (list, tuple, dict)) and nested:
+                series = _series(nested)
+                if series:
+                    return series
 
         pairs: list[tuple[int, float]] = []
         for key, raw in payload.items():
@@ -202,14 +226,43 @@ def _series(payload: Any) -> list[tuple[int, float]]:
             value = _as_float(raw)
             if value is None:
                 continue
-            if timestamp > _MS_THRESHOLD:
-                timestamp //= 1000
-            pairs.append((timestamp, value))
+            pairs.append((_seconds(timestamp), value))
         pairs.sort(key=lambda pair: pair[0])
         return pairs
 
-    value = _as_float(payload)
-    return [(0, value)] if value is not None else []
+    return []
+
+
+def _entry_pair(item: Any) -> tuple[int, float] | None:
+    """One reading expressed as an entry: {"timestamp": .., "value": ..} or a pair."""
+    if isinstance(item, dict):
+        timestamp = None
+        for key in TIMESTAMP_KEYS:
+            timestamp = _as_int(item.get(key))
+            if timestamp is not None:
+                break
+        value = None
+        for key in VALUE_KEYS:
+            if key in item:
+                value = _as_float(item[key])
+                if value is not None:
+                    break
+        if value is None:
+            series = _series(item)
+            return series[-1] if series else None
+        return (_seconds(timestamp or 0), value)
+
+    if isinstance(item, (list, tuple)) and len(item) >= 2:
+        timestamp = _as_int(item[0])
+        value = _as_float(item[1])
+        if timestamp is not None and value is not None:
+            return (_seconds(timestamp), value)
+    return None
+
+
+def _seconds(timestamp: int) -> int:
+    """Timestamps above this are milliseconds rather than seconds."""
+    return timestamp // 1000 if timestamp > _MS_THRESHOLD else timestamp
 
 
 def _consumption_from_series(
@@ -228,21 +281,27 @@ def _consumption_from_series(
 
 def _balance_entry(channel_balance: Any, modem_id: str) -> dict:
     """The balance row of one modem, whatever casing the cabinet used for its id."""
-    data = channel_balance.get("data") if isinstance(channel_balance, dict) else None
-    if not isinstance(data, dict):
-        return {}
+    candidates: list[Any] = []
+    if isinstance(channel_balance, dict):
+        data = channel_balance.get("data")
+        if isinstance(data, dict):
+            for key, entry in data.items():
+                if _norm(key) == modem_id and isinstance(entry, dict):
+                    return entry
+            candidates = list(data.values())
+        elif isinstance(data, list):
+            candidates = data
+        else:
+            candidates = [channel_balance]
+    elif isinstance(channel_balance, list):
+        candidates = list(channel_balance)
 
-    for key, entry in data.items():
-        if _norm(key) == modem_id and isinstance(entry, dict):
-            return entry
-
-    for entry in data.values():
+    for entry in candidates:
         if isinstance(entry, dict) and _norm(entry.get("modem_id")) == modem_id:
             return entry
 
-    if len(data) == 1:
-        only = next(iter(data.values()))
-        return only if isinstance(only, dict) else {}
+    if len(candidates) == 1 and isinstance(candidates[0], dict):
+        return candidates[0]
     return {}
 
 
@@ -275,9 +334,15 @@ def _as_unit(raw: Any) -> str | None:
 
 
 def _read_channel(reg: Any) -> tuple[float | None, int | None]:
-    """Reading value and its timestamp from one registrator entry."""
+    """Reading value and its timestamp from one registrator entry.
+
+    Handles a plain number, a timestamp -> value map, a list of reading entries
+    and the metadata-only entries get_full_element_info returns for meters whose
+    readings live in get_values.
+    """
     if not isinstance(reg, dict):
-        return _as_float(reg), None
+        series = _series(reg)
+        return (series[-1][1], series[-1][0]) if series else (_as_float(reg), None)
 
     value = None
     timestamp = None
@@ -287,25 +352,27 @@ def _read_channel(reg: Any) -> tuple[float | None, int | None]:
             if value is not None:
                 break
 
-    nested = reg.get("values") or reg.get("data")
-    if isinstance(nested, dict):
-        timestamp = _as_int(nested.get("timestamp")) or timestamp
-        for key in VALUE_KEYS:
-            if key in nested:
-                value = _as_float(nested[key]) if value is None else value
-                if value is not None:
-                    break
-
     for key in TIMESTAMP_KEYS:
         if key in reg:
             timestamp = _as_int(reg[key])
             if timestamp is not None:
                 break
 
+    for key in NESTED_KEYS:
+        nested = reg.get(key)
+        if isinstance(nested, dict):
+            timestamp = _as_int(nested.get("timestamp")) or timestamp
+            for name in VALUE_KEYS:
+                if name in nested and value is None:
+                    value = _as_float(nested[name])
+                    if value is not None:
+                        break
+
     if value is None:
-        # The entry is a timestamp -> value map, e.g. {"unit_id": "кВт·ч", "1700000000": 12.3}.
+        # No value key: the entry is a timestamp -> value map or a list of
+        # readings, e.g. {"unit_id": "кВт·ч", "1700000000": 12.3}.
         series = _series(reg)
         if series:
             timestamp, value = series[-1]
 
-    return value, timestamp
+    return value, _seconds(timestamp or 0) if timestamp else None

@@ -22,7 +22,6 @@ PASSWORD_SELECTOR = TextSelector({"type": "password"})
 
 from .api import WaviotApi, WaviotAuthError, WaviotError, WaviotTwoFactorError
 from .const import (
-    API_DOCS_URL,
     CONF_API_KEY,
     CONF_ELEMENT_ID,
     CONF_LOGIN,
@@ -115,7 +114,6 @@ class WaviotConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
-            description_placeholders={"api_docs": API_DOCS_URL},
         )
 
     @staticmethod

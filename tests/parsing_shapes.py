@@ -69,6 +69,29 @@ CASES = [
     ("water in cubic metres", {"water_hot_tsum": {"last_value": "12,3", "unit_id": "м³"}}, 12.3, None),
     ("numeric water channel id", {"160": {"unit_id": "м³", "1700000000": 4.1, "1700003600": 4.4}}, 4.4, None),
     ("balance keyed by uppercase modem id", {"electro_ac_p_lsum_t1": {"unit_id": "кВт·ч"}}, 2500.0, None),
+    # get_values / get_modem_channel_values list shapes.
+    ("readings as entry list", {"electro_ac_p_lsum_t1": {"unit_id": "кВт·ч"}}, 123.5, {
+        "70B3B9": {"electro_ac_p_lsum_t1": [
+            {"timestamp": 1700000000, "value": 120.0},
+            {"timestamp": NOW, "value": 123.5},
+        ]}
+    }),
+    ("readings as entry list nested under values", {"electro_ac_p_lsum_tsum": {"unit_id": "кВт·ч"}}, 123.5, {
+        "70B3B9": {"electro_ac_p_lsum_tsum": {"values": [
+            {"event_time": 1700000000, "val": 120.0},
+            {"event_time": NOW, "val": 123.5},
+        ]}}
+    }),
+    ("readings as [timestamp, value] pairs", {"electro_ac_p_lsum_t2": {"unit_id": "кВт·ч"}}, 42.0, {
+        "70B3B9": {"electro_ac_p_lsum_t2": [[1700000000, 40.0], [NOW, 42.0]]}
+    }),
+    ("readings nested under the modem id", {"electro_ac_p_lsum_t1": {"unit_id": "кВт·ч"}}, 123.5, {
+        "70B3B9": {"70b3b9": {"electro_ac_p_lsum_t1": {"1700000000": 120.0, "1700003600": 123.5}}}
+    }),
+    ("channel values in milliseconds", {"electro_ac_p_lsum_t3": {"unit_id": "кВт·ч"}}, 42.0, {
+        "70B3B9": {"electro_ac_p_lsum_t3": {"1700000000000": 40.0, "1700003600000": 42.0}}
+    }),
+    ("unit with non-breaking space", {"electro_ac_p_lsum_t1": {"last_value": 7.0, "unit_id": "кВт\u00a0ч"}}, 7.0, None),
 ]
 
 failures = []
@@ -131,10 +154,38 @@ reset = parse_without_balance(
 if "electro_ac_p_lsum_t1" in next(iter(reset.values())).consumption:
     failures.append("a meter total reset must not produce a negative daily consumption")
 
+# Balance rows given as a list of entries instead of a modem-keyed dict.
+info = {
+    "devices": {
+        "42": {
+            "id": 42,
+            "device_sn": "25071542",
+            "class_name": "Electro meter",
+            "modem_id": MODEM_ID,
+            "registrators": {"electro_ac_p_lsum_t1": {"unit_id": "кВт·ч"}},
+        }
+    }
+}
+devices = build_devices(
+    info,
+    MODEMS,
+    {"electro_ac_p_lsum_t1": {"data": [{"modem_id": MODEM_ID, "diff": 2.0, "end": 900.0, "last_message_timestamp": NOW - 60}]}},
+    1234,
+    {},
+    NOW,
+)
+device = next(iter(devices.values()))
+if device.channels["electro_ac_p_lsum_t1"].value != 900.0:
+    failures.append(
+        f"balance list entries: got {device.channels['electro_ac_p_lsum_t1'].value}, expected 900.0"
+    )
+if device.consumption.get("electro_ac_p_lsum_t1") != 2.0:
+    failures.append(f"balance list entries: consumption {device.consumption}")
+
 if failures:
     print("FAILED:")
     for line in failures:
         print(f"  {line}")
     raise SystemExit(1)
 
-print("OK: 11 payload shapes parsed, instantaneous channels ignored, reset guarded")
+print("OK: 18 payload shapes parsed, instantaneous channels ignored, reset guarded")
