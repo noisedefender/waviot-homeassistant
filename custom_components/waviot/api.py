@@ -187,6 +187,25 @@ class WaviotApi:
         payload = await self.call("api.modem/info/", {"id": modem_id})
         return payload.get("modem", {})
 
+    async def values(self, modem_id: str, from_ts: int, to_ts: int) -> dict:
+        """Registrator readings of one modem: registrator id -> timestamp/value.
+
+        The cabinet accepts both spellings of a modem id, so the lowercase form
+        is retried if the one it handed us is rejected.
+        """
+        for candidate in (modem_id, modem_id.lower()):
+            try:
+                payload = await self.call(
+                    "api.data/get_values/",
+                    {"modem_id": candidate, "from": from_ts, "to": to_ts},
+                )
+            except WaviotApiError:
+                if candidate == modem_id.lower():
+                    raise
+                continue
+            return payload.get("registrators") or {}
+        return {}
+
     async def balance(self, element_id: int, from_ts: int, to_ts: int) -> dict:
         """Consumption difference per channel for a period."""
         payload = await self.call(

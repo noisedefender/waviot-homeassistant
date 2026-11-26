@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .const import UNIT_MAP
+from .const import DAY_SECONDS, UNIT_MAP
 
 # Channels that are not meter totals.
 IGNORED_CHANNELS = {"electro_event_log"}
@@ -15,6 +15,12 @@ TOTAL_UNITS = {"kWh", "m³"}
 # meter class, so all known spellings are tried.
 VALUE_KEYS = ("last_value", "value", "val", "last", "current_value", "end")
 TIMESTAMP_KEYS = ("last_value_timestamp", "timestamp", "time", "ts", "event_time")
+
+# Values older than this are not usable for the daily consumption fallback.
+CONSUMPTION_WINDOW = DAY_SECONDS
+
+# Timestamps above this are milliseconds rather than seconds.
+_MS_THRESHOLD = 1_000_000_000_000
 
 
 @dataclass
@@ -60,26 +66,46 @@ def channel_label(channel_id: str, unit: str) -> str:
 
 
 def build_devices(
-    element_info: dict, modems: list[dict], balance: dict, element_id: int
+    element_info: dict,
+    modems: list[dict],
+    balance: dict,
+    element_id: int,
+    registrator_values: dict[str, dict] | None = None,
+    now: int | None = None,
 ) -> dict[str, WaviotDevice]:
-    """Turn get_full_element_info/get_modems/get_balance_info into meter objects."""
+    """Turn get_full_element_info/get_modems/get_balance_info into meter objects.
+
+    ``registrator_values`` carries get_values payloads keyed by modem id; it is
+    the shape the cabinet really uses for readings (timestamp -> value), so it
+    is used whenever the element info carries no value of its own.
+    """
     modems_by_id: dict[str, dict[str, Any]] = {
-        str(modem.get("id", "")).lower(): modem for modem in modems
+        _norm(modem.get("id")): modem for modem in modems
     }
+    values_by_modem: dict[str, dict[str, Any]] = {
+        _norm(modem_id): _lower_keys(registrators)
+        for modem_id, registrators in (registrator_values or {}).items()
+    }
+    balance_by_channel: dict[str, Any] = _lower_keys(balance)
 
     devices: dict[str, WaviotDevice] = {}
     for device_id, raw in (element_info.get("devices") or {}).items():
-        modem_id = str(raw.get("modem_id") or "").lower()
+        modem_id = _norm(raw.get("modem_id"))
         modem = modems_by_id.get(modem_id, {})
+        modem_values = values_by_modem.get(modem_id, {})
 
         channels: dict[str, WaviotChannel] = {}
         for channel_id, reg in (raw.get("registrators") or {}).items():
             if channel_id in IGNORED_CHANNELS:
                 continue
-            unit = _as_unit(reg.get("unit_id"))
+            unit = _as_unit(reg.get("unit_id") if isinstance(reg, dict) else None)
             if unit not in TOTAL_UNITS:
                 continue
             value, timestamp = _read_channel(reg)
+            if value is None:
+                series = _series(modem_values.get(_norm(channel_id)))
+                if series:
+                    timestamp, value = series[-1]
             channels[channel_id] = WaviotChannel(
                 channel_id=channel_id,
                 label=channel_label(channel_id, unit),
@@ -110,11 +136,17 @@ def build_devices(
         )
 
         for channel_id, channel in channels.items():
-            channel_balance = (balance.get(channel_id) or {}).get("data") or {}
-            entry = channel_balance.get(modem_id) or {}
+            entry = _balance_entry(balance_by_channel.get(_norm(channel_id)), modem_id)
             diff = _as_float(entry.get("diff"))
             if diff is not None:
                 device.consumption[channel_id] = diff
+            else:
+                # No balance row: derive the day from the reading series instead.
+                derived = _consumption_from_series(
+                    _series(modem_values.get(_norm(channel_id))), now
+                )
+                if derived is not None:
+                    device.consumption[channel_id] = derived
             if channel.value is None:
                 # Some meter classes only expose the reading through the balance.
                 channel.value = _as_float(entry.get("end"))
@@ -125,6 +157,82 @@ def build_devices(
         devices[sn] = device
 
     return devices
+
+
+def _norm(value: Any) -> str:
+    """Modem ids, channel ids and balance keys, case-insensitive."""
+    return str(value or "").strip().lower()
+
+
+def _lower_keys(mapping: Any) -> dict[str, Any]:
+    return {
+        _norm(key): value
+        for key, value in (mapping or {}).items()
+        if isinstance(key, str)
+    }
+
+
+def _series(payload: Any) -> list[tuple[int, float]]:
+    """timestamp -> value pairs of one registrator, oldest first.
+
+    get_values and get_modem_channel_values return readings as
+    ``{"<unix timestamp>": <value>}``, sometimes nested under ``values``.
+    """
+    if isinstance(payload, dict):
+        nested = payload.get("values") or payload.get("data")
+        if isinstance(nested, dict):
+            payload = nested
+
+        pairs: list[tuple[int, float]] = []
+        for key, raw in payload.items():
+            timestamp = _as_int(key)
+            if timestamp is None:
+                continue
+            value = _as_float(raw)
+            if value is None:
+                continue
+            if timestamp > _MS_THRESHOLD:
+                timestamp //= 1000
+            pairs.append((timestamp, value))
+        pairs.sort(key=lambda pair: pair[0])
+        return pairs
+
+    value = _as_float(payload)
+    return [(0, value)] if value is not None else []
+
+
+def _consumption_from_series(
+    series: list[tuple[int, float]], now: int | None
+) -> float | None:
+    """Difference between the newest reading and the newest one a day earlier."""
+    if len(series) < 2 or now is None:
+        return None
+    latest_ts, latest_value = series[-1]
+    cutoff = latest_ts - CONSUMPTION_WINDOW
+    earlier = [value for ts, value in series if ts <= cutoff]
+    if not earlier or latest_value < earlier[-1]:
+        return None
+    return latest_value - earlier[-1]
+
+
+def _balance_entry(channel_balance: Any, modem_id: str) -> dict:
+    """The balance row of one modem, whatever casing the cabinet used for its id."""
+    data = channel_balance.get("data") if isinstance(channel_balance, dict) else None
+    if not isinstance(data, dict):
+        return {}
+
+    for key, entry in data.items():
+        if _norm(key) == modem_id and isinstance(entry, dict):
+            return entry
+
+    for entry in data.values():
+        if isinstance(entry, dict) and _norm(entry.get("modem_id")) == modem_id:
+            return entry
+
+    if len(data) == 1:
+        only = next(iter(data.values()))
+        return only if isinstance(only, dict) else {}
+    return {}
 
 
 def _as_float(value: Any) -> float | None:
@@ -174,12 +282,19 @@ def _read_channel(reg: Any) -> tuple[float | None, int | None]:
         for key in VALUE_KEYS:
             if key in nested:
                 value = _as_float(nested[key]) if value is None else value
-                break
+                if value is not None:
+                    break
 
     for key in TIMESTAMP_KEYS:
         if key in reg:
             timestamp = _as_int(reg[key])
             if timestamp is not None:
                 break
+
+    if value is None:
+        # The entry is a timestamp -> value map, e.g. {"unit_id": "кВт·ч", "1700000000": 12.3}.
+        series = _series(reg)
+        if series:
+            timestamp, value = series[-1]
 
     return value, timestamp

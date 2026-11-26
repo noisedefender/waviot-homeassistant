@@ -37,9 +37,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: WaviotCoordinator = get_coordinator(hass, entry)
+    known: set[str] = set()
 
-    entities: list[SensorEntity] = []
-    for device in coordinator.data.values():
+    def entities_for(device: WaviotDevice) -> list[SensorEntity]:
+        entities: list[SensorEntity] = []
         for channel in device.channels.values():
             entities.append(WaviotChannelEntity(coordinator, device, channel))
             if channel.channel_id.endswith("tsum"):
@@ -54,8 +55,21 @@ async def async_setup_entry(
             entities.append(WaviotTemperatureEntity(coordinator, device))
         if device.rssi is not None:
             entities.append(WaviotSignalEntity(coordinator, device))
+        return entities
 
-    async_add_entities(entities)
+    def add_new_entities() -> None:
+        """Add whatever the latest update introduced, including meters added later."""
+        fresh: list[SensorEntity] = []
+        for device in (coordinator.data or {}).values():
+            for entity in entities_for(device):
+                if entity.unique_id not in known:
+                    known.add(entity.unique_id)
+                    fresh.append(entity)
+        if fresh:
+            async_add_entities(fresh)
+
+    add_new_entities()
+    entry.async_on_unload(coordinator.async_add_listener(add_new_entities))
 
 
 class WaviotEntity(CoordinatorEntity[WaviotCoordinator]):

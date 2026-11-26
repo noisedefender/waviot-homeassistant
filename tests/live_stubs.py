@@ -11,6 +11,12 @@ def stub_homeassistant() -> None:
     ha = types.ModuleType("homeassistant")
     sys.modules["homeassistant"] = ha
 
+    # Only needed for the type annotations of the client; tests inject their
+    # own session object and never open a connection.
+    aiohttp = types.ModuleType("aiohttp")
+    aiohttp.ClientSession = object
+    sys.modules["aiohttp"] = aiohttp
+
     for name in (
         "config_entries",
         "core",

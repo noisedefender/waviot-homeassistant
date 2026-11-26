@@ -11,6 +11,12 @@ USER_AGENT = "HomeAssistant WAVIoT integration"
 
 DEFAULT_POLL_INTERVAL_MINUTES = 15
 
+DAY_SECONDS = 86400
+
+# How far back get_values is asked for. Meter readings arrive hourly, so this
+# window always contains the newest reading while staying small enough to poll.
+READING_WINDOW_SECONDS = 3 * DAY_SECONDS
+
 CONF_LOGIN = "login"
 CONF_PASSWORD = "password"
 CONF_API_KEY = "api_key"

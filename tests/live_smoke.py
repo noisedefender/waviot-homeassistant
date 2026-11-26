@@ -53,7 +53,17 @@ async def main() -> int:
         now = int(time.time())
         balance = await api.balance(element_id, now - 86400, now)
 
-        devices = build_devices(info, modems, balance, element_id)
+        readings: dict[str, dict] = {}
+        for modem in modems:
+            modem_id = str(modem.get("id") or "").strip()
+            if not modem_id:
+                continue
+            try:
+                readings[modem_id] = await api.values(modem_id, now - 259200, now)
+            except WaviotError as err:
+                print(f"  no readings for modem {modem_id}: {err}")
+
+        devices = build_devices(info, modems, balance, element_id, readings, now)
         if not devices:
             print("no meters parsed")
             return 1
