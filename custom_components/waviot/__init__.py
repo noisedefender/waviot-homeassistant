@@ -46,15 +46,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = WaviotCoordinator(
         hass,
         api,
+        entry,
         entry.data.get(CONF_ELEMENT_ID),
         minutes,
     )
 
     await coordinator.async_config_entry_first_refresh()
 
+    entry.runtime_data = coordinator
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
-    if hasattr(entry, "runtime_data"):
-        entry.runtime_data = coordinator
 
     entry.async_on_unload(session.close)
     entry.async_on_unload(entry.add_update_listener(_update_listener))

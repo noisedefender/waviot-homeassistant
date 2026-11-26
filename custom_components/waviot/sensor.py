@@ -77,8 +77,13 @@ async def async_setup_entry(
     entry.async_on_unload(coordinator.async_add_listener(add_new_entities))
 
 
-class WaviotEntity(CoordinatorEntity[WaviotCoordinator]):
-    """Base entity bound to one meter."""
+class WaviotEntity(CoordinatorEntity[WaviotCoordinator], SensorEntity):
+    """Base entity bound to one meter.
+
+    SensorEntity is part of the base list: without it HA creates a plain entity
+    that never computes a state or a unit, which is why every sensor read
+    "unknown" even though the cabinet returned readings.
+    """
 
     _attr_has_entity_name = True
 

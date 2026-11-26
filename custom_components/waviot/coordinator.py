@@ -6,6 +6,7 @@ import logging
 import time
 from datetime import timedelta
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -24,6 +25,7 @@ class WaviotCoordinator(DataUpdateCoordinator[dict[str, WaviotDevice]]):
         self,
         hass: HomeAssistant,
         api: WaviotApi,
+        entry: ConfigEntry,
         element_id: int | None,
         poll_interval_minutes: int,
     ) -> None:
@@ -31,6 +33,7 @@ class WaviotCoordinator(DataUpdateCoordinator[dict[str, WaviotDevice]]):
             hass,
             _LOGGER,
             name=DOMAIN,
+            config_entry=entry,
             update_interval=timedelta(minutes=poll_interval_minutes),
         )
         self._api = api
