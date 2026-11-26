@@ -20,6 +20,17 @@ from .coordinator import WaviotCoordinator
 from .parsing import WaviotChannel, WaviotDevice
 
 
+def channel_icon(channel_id: str, unit: str) -> str:
+    """Icon for a meter channel, picked from what the meter measures."""
+    if channel_id.startswith("gas"):
+        return "mdi:fire"
+    if channel_id.startswith("water"):
+        return "mdi:water"
+    if channel_id.startswith("electro") or unit == "kWh":
+        return "mdi:flash"
+    return "mdi:gauge"
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -84,6 +95,7 @@ class WaviotChannelEntity(WaviotEntity):
         self._attr_unique_id = f"{device.sn}_{channel.channel_id}"
         self._attr_name = channel.label
         self._attr_native_unit_of_measurement = channel.unit
+        self._attr_icon = channel_icon(channel.channel_id, channel.unit)
         if channel.unit == "kWh":
             self._attr_device_class = SensorDeviceClass.ENERGY
 
@@ -106,6 +118,7 @@ class WaviotConsumptionEntity(WaviotEntity):
         self._attr_unique_id = f"{device.sn}_{channel.channel_id}_daily"
         self._attr_name = f"{channel.label} per day"
         self._attr_native_unit_of_measurement = channel.unit
+        self._attr_icon = channel_icon(channel.channel_id, channel.unit)
         if channel.unit == "kWh":
             self._attr_device_class = SensorDeviceClass.ENERGY
 

@@ -1,5 +1,4 @@
 {
   "name": "WAVIoT",
-  "content_type": "integration",
   "homeassistant": "2024.6.0"
 }

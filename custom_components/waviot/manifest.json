@@ -1,6 +1,7 @@
 {
   "domain": "waviot",
   "name": "WAVIoT",
+  "categories": ["energy.meters_monitoring"],
   "codeowners": ["@noisedefender"],
   "config_flow": true,
   "documentation": "https://github.com/noisedefender/waviot-homeassistant",
@@ -8,6 +9,6 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/noisedefender/waviot-homeassistant/issues",
   "requirements": [],
-  "version": "0.1.1",
+  "version": "0.1.4",
   "homeassistant": "2024.6.0"
 }

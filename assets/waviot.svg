@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="200 30 730 770" width="730" height="770">
+  <title>WAVIoT</title>
+  <!-- Meter body with a display window (the window is a hole, so the theme colour shows through). -->
+  <path fill="#000000" fill-rule="evenodd" d="M200 300h460a60 60 0 0 1 60 60v400a60 60 0 0 1-60 60H260a60 60 0 0 1-60-60V360a60 60 0 0 1 60-60zm60 40h340v200H260z"/>
+  <!-- Lightning bolt in the display window: consumed electricity. -->
+  <path fill="#000000" d="M460 340 360 450h65l-25 70 120-120h-65l45-60z"/>
+  <!-- Radio waves sent from the meter to the cabinet. -->
+  <g fill="none" stroke="#000000" stroke-width="42" stroke-linecap="round">
+    <path d="M780 300A120 120 0 0 0 660 180"/>
+    <path d="M855 300A195 195 0 0 0 660 105"/>
+    <path d="M930 300A270 270 0 0 0 660 30"/>
+  </g>
+</svg>
