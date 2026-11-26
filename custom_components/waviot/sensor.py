@@ -42,9 +42,7 @@ async def async_setup_entry(
     for device in coordinator.data.values():
         for channel in device.channels.values():
             entities.append(WaviotChannelEntity(coordinator, device, channel))
-            if channel.channel_id in device.consumption and channel.channel_id.endswith(
-                "tsum"
-            ):
+            if channel.channel_id.endswith("tsum"):
                 entities.append(
                     WaviotConsumptionEntity(coordinator, device, channel)
                 )
@@ -67,7 +65,8 @@ class WaviotEntity(CoordinatorEntity[WaviotCoordinator]):
 
     def __init__(self, coordinator: WaviotCoordinator, device: WaviotDevice) -> None:
         super().__init__(coordinator)
-        self._device = device
+        self._sn = device.sn
+        self._initial = device
         self._attr_device_info = {
             "identifiers": {(DOMAIN, device.sn)},
             "name": device.name,
@@ -76,10 +75,17 @@ class WaviotEntity(CoordinatorEntity[WaviotCoordinator]):
         }
 
     @property
+    def meter(self) -> WaviotDevice | None:
+        """The meter of the latest update.
+
+        Every poll builds new meter objects, so readings are read from the
+        coordinator rather than from the object captured at setup.
+        """
+        return (self.coordinator.data or {}).get(self._sn) or self._initial
+
+    @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success and self._device.sn in (
-            self.coordinator.data or {}
-        )
+        return self.coordinator.last_update_success and self.meter is not None
 
 
 class WaviotChannelEntity(WaviotEntity):
@@ -101,7 +107,8 @@ class WaviotChannelEntity(WaviotEntity):
 
     @property
     def native_value(self) -> float | None:
-        current = self._device.channels.get(self._channel.channel_id)
+        meter = self.meter
+        current = meter.channels.get(self._channel.channel_id) if meter else None
         return current.value if current else None
 
 
@@ -124,7 +131,8 @@ class WaviotConsumptionEntity(WaviotEntity):
 
     @property
     def native_value(self) -> float | None:
-        return self._device.consumption.get(self._channel_id)
+        meter = self.meter
+        return meter.consumption.get(self._channel_id) if meter else None
 
 
 class WaviotLastReadingEntity(WaviotEntity):
@@ -140,7 +148,13 @@ class WaviotLastReadingEntity(WaviotEntity):
 
     @property
     def native_value(self) -> datetime | None:
-        ts = self._device.last_station_time
+        meter = self.meter
+        if meter is None:
+            return None
+        ts = meter.last_station_time or max(
+            (c.timestamp for c in meter.channels.values() if c.timestamp),
+            default=None,
+        )
         if not ts:
             return None
         return datetime.fromtimestamp(ts, UTC)
@@ -161,7 +175,8 @@ class WaviotBatteryEntity(WaviotEntity):
 
     @property
     def native_value(self) -> float | None:
-        return self._device.battery
+        meter = self.meter
+        return meter.battery if meter else None
 
 
 class WaviotTemperatureEntity(WaviotEntity):
@@ -179,7 +194,8 @@ class WaviotTemperatureEntity(WaviotEntity):
 
     @property
     def native_value(self) -> float | None:
-        return self._device.temperature
+        meter = self.meter
+        return meter.temperature if meter else None
 
 
 class WaviotSignalEntity(WaviotEntity):
@@ -197,4 +213,5 @@ class WaviotSignalEntity(WaviotEntity):
 
     @property
     def native_value(self) -> int | None:
-        return self._device.rssi
+        meter = self.meter
+        return meter.rssi if meter else None

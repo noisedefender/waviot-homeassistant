@@ -22,6 +22,9 @@ CONF_POLL_INTERVAL = "poll_interval_minutes"
 UNIT_MAP = {
     "kWh": "kWh",
     "кВт·ч": "kWh",
-    "m³": "m³",
+    "кВтч": "kWh",
+    "кВт*ч": "kWh",
+    "кВт.ч": "kWh",
     "м³": "m³",
+    "м3": "m³",
 }

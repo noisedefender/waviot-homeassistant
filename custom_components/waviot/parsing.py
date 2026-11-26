@@ -11,6 +11,11 @@ from .const import UNIT_MAP
 IGNORED_CHANNELS = {"electro_event_log"}
 TOTAL_UNITS = {"kWh", "m³"}
 
+# The cabinet nests a channel reading under different keys depending on the
+# meter class, so all known spellings are tried.
+VALUE_KEYS = ("last_value", "value", "val", "last", "current_value", "end")
+TIMESTAMP_KEYS = ("last_value_timestamp", "timestamp", "time", "ts", "event_time")
+
 
 @dataclass
 class WaviotChannel:
@@ -71,15 +76,16 @@ def build_devices(
         for channel_id, reg in (raw.get("registrators") or {}).items():
             if channel_id in IGNORED_CHANNELS:
                 continue
-            unit = UNIT_MAP.get(str(reg.get("unit_id") or ""))
+            unit = _as_unit(reg.get("unit_id"))
             if unit not in TOTAL_UNITS:
                 continue
+            value, timestamp = _read_channel(reg)
             channels[channel_id] = WaviotChannel(
                 channel_id=channel_id,
                 label=channel_label(channel_id, unit),
                 unit=unit,
-                value=_as_float(reg.get("last_value")),
-                timestamp=reg.get("last_value_timestamp"),
+                value=value,
+                timestamp=timestamp,
             )
 
         if not channels:
@@ -103,11 +109,18 @@ def build_devices(
             channels=channels,
         )
 
-        for channel_id in channels:
+        for channel_id, channel in channels.items():
             channel_balance = (balance.get(channel_id) or {}).get("data") or {}
-            diff = _as_float(channel_balance.get(modem_id, {}).get("diff"))
+            entry = channel_balance.get(modem_id) or {}
+            diff = _as_float(entry.get("diff"))
             if diff is not None:
                 device.consumption[channel_id] = diff
+            if channel.value is None:
+                # Some meter classes only expose the reading through the balance.
+                channel.value = _as_float(entry.get("end"))
+                channel.timestamp = channel.timestamp or _as_int(
+                    entry.get("last_message_timestamp")
+                )
 
         devices[sn] = device
 
@@ -115,6 +128,9 @@ def build_devices(
 
 
 def _as_float(value: Any) -> float | None:
+    """Number as the cabinet sends it: float, or a string with a comma decimal."""
+    if isinstance(value, str):
+        value = value.replace("\u00a0", "").replace(" ", "").replace(",", ".")
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -126,3 +142,44 @@ def _as_int(value: Any) -> int | None:
         return int(float(value))
     except (TypeError, ValueError):
         return None
+
+
+def _as_unit(raw: Any) -> str | None:
+    """Cabinet unit spelling ("кВт·ч", "кВтч", "м³") mapped to a HA unit."""
+    if raw is None:
+        return None
+    text = str(raw).replace("\u00a0", " ").strip()
+    for candidate in (text, text.replace(" ", "")):
+        if candidate in UNIT_MAP:
+            return UNIT_MAP[candidate]
+    return None
+
+
+def _read_channel(reg: Any) -> tuple[float | None, int | None]:
+    """Reading value and its timestamp from one registrator entry."""
+    if not isinstance(reg, dict):
+        return _as_float(reg), None
+
+    value = None
+    timestamp = None
+    for key in VALUE_KEYS:
+        if key in reg:
+            value = _as_float(reg[key])
+            if value is not None:
+                break
+
+    nested = reg.get("values") or reg.get("data")
+    if isinstance(nested, dict):
+        timestamp = _as_int(nested.get("timestamp")) or timestamp
+        for key in VALUE_KEYS:
+            if key in nested:
+                value = _as_float(nested[key]) if value is None else value
+                break
+
+    for key in TIMESTAMP_KEYS:
+        if key in reg:
+            timestamp = _as_int(reg[key])
+            if timestamp is not None:
+                break
+
+    return value, timestamp
