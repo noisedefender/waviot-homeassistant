@@ -145,6 +145,7 @@ class WaviotConsumptionEntity(WaviotEntity):
     """
 
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_display_precision = 3
 
     def __init__(
         self, coordinator: WaviotCoordinator, device: WaviotDevice, channel: WaviotChannel

@@ -22,6 +22,9 @@ NESTED_KEYS = ("values", "data", "registrators", "channel", "packets", "history"
 # Values older than this are not usable for the daily consumption fallback.
 CONSUMPTION_WINDOW = DAY_SECONDS
 
+# Decimals kept for daily consumption: kWh, m³ and gas are reported to 0.001.
+CONSUMPTION_PRECISION = 3
+
 # Timestamps above this are milliseconds rather than seconds.
 _MS_THRESHOLD = 1_000_000_000_000
 
@@ -157,14 +160,16 @@ def build_devices(
             entry = _balance_entry(balance_by_channel.get(_norm(channel_id)), modem_id)
             diff = _as_float(entry.get("diff"))
             if diff is not None:
-                device.consumption[channel_id] = diff
+                # The cabinet divides by hours, so the raw difference carries a long
+                # tail of digits that is not a real measurement resolution.
+                device.consumption[channel_id] = round(diff, CONSUMPTION_PRECISION)
             else:
                 # No balance row: derive the day from the reading series instead.
                 derived = _consumption_from_series(
                     _series(modem_values.get(_norm(channel_id))), now
                 )
                 if derived is not None:
-                    device.consumption[channel_id] = derived
+                    device.consumption[channel_id] = round(derived, CONSUMPTION_PRECISION)
             if channel.value is None:
                 # Some meter classes only expose the reading through the balance.
                 channel.value = _as_float(entry.get("end"))

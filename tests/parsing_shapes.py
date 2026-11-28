@@ -154,6 +154,30 @@ reset = parse_without_balance(
 if "electro_ac_p_lsum_t1" in next(iter(reset.values())).consumption:
     failures.append("a meter total reset must not produce a negative daily consumption")
 
+# The cabinet divides the balance difference over the period, which produces a
+# long digit tail that is not a measurement resolution.
+tail = build_devices(
+    {
+        "devices": {
+            "42": {
+                "id": 42,
+                "device_sn": "8146244",
+                "class_name": "Electricity",
+                "modem_id": MODEM_ID,
+                "registrators": {"electro_ac_p_lsum_tsum": {"unit_id": "kWh"}},
+            }
+        }
+    },
+    MODEMS,
+    {"electro_ac_p_lsum_tsum": {"data": {MODEM_ID.lower(): {"diff": 13.6533841203709, "end": 46485.92}}}},
+    1234,
+    {},
+    NOW,
+)
+daily = next(iter(tail.values())).consumption["electro_ac_p_lsum_tsum"]
+if daily != 13.653:
+    failures.append(f"daily consumption not rounded: got {daily}, expected 13.653")
+
 # Balance rows given as a list of entries instead of a modem-keyed dict.
 info = {
     "devices": {
