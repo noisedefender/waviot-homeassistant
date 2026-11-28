@@ -137,7 +137,12 @@ class WaviotChannelEntity(WaviotEntity):
 
 
 class WaviotConsumptionEntity(WaviotEntity):
-    """Energy or volume consumed over the last day, taken from the cabinet balance."""
+    """Energy or volume consumed over the last day, taken from the cabinet balance.
+
+    No device class: Home Assistant rejects an ``energy`` sensor with state class
+    ``measurement``, and a rolling 24-hour delta is not a cumulative total. The
+    unit still says kWh or m³.
+    """
 
     _attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -150,8 +155,6 @@ class WaviotConsumptionEntity(WaviotEntity):
         self._attr_name = f"{channel.label} per day"
         self._attr_native_unit_of_measurement = channel.unit
         self._attr_icon = channel_icon(channel.channel_id, channel.unit)
-        if channel.unit == "kWh":
-            self._attr_device_class = SensorDeviceClass.ENERGY
 
     @property
     def native_value(self) -> float | None:

@@ -1,6 +1,8 @@
-"""Constants for the WAVIoT integration."""
+"""Constants for the WAVIoT cabinet integration."""
 
-DOMAIN = "waviot"
+# The catalog already ships integrations under the plain "waviot" domain, so
+# this one claims its own name and installs into custom_components/waviot_cabinet.
+DOMAIN = "waviot_cabinet"
 
 # Where the cabinet lives and where authentication happens.
 AUTH_URL = "https://auth.waviot.ru/?action=user-login&true_api=1"

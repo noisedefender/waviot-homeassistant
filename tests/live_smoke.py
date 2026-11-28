@@ -19,9 +19,9 @@ from live_stubs import stub_homeassistant  # noqa: E402
 
 stub_homeassistant()
 
-from waviot.api import WaviotApi, WaviotError  # noqa: E402
-from waviot.const import USER_AGENT  # noqa: E402
-from waviot.parsing import build_devices  # noqa: E402
+from waviot_cabinet.api import WaviotApi, WaviotError  # noqa: E402
+from waviot_cabinet.const import USER_AGENT  # noqa: E402
+from waviot_cabinet.parsing import build_devices  # noqa: E402
 
 
 async def main() -> int:

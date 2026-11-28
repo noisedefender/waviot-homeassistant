@@ -16,6 +16,18 @@
           "api_key": "Personal key shown on the API page of the cabinet. If set, no password login is performed.",
           "element_id": "Tree element (house) id. By default the element shown on the cabinet start page is used."
         }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate with the WAVIoT cabinet",
+        "description": "Home Assistant can no longer read the cabinet with the stored credentials. Enter a new password for the stored login, or a new API key from the API page of the cabinet.",
+        "data": {
+          "password": "Password",
+          "api_key": "API key"
+        },
+        "data_description": {
+          "password": "Cabinet password for the stored login; the API key is picked up from it.",
+          "api_key": "Personal key shown on the API page of the cabinet. Used directly, no password login."
+        }
       }
     },
     "error": {
@@ -27,13 +39,14 @@
       "invalid_element_id": "The element id must be a number."
     },
     "abort": {
-      "already_configured": "This account is already configured."
+      "already_configured": "This account is already configured.",
+      "reauth_successful": "Re-authentication succeeded."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "WAVIoT options",
+        "title": "WAVIoT Cabinet options",
         "data": {
           "poll_interval_minutes": "Polling interval (minutes)"
         },

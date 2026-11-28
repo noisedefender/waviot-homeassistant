@@ -12,7 +12,7 @@ from live_stubs import stub_homeassistant  # noqa: E402
 
 stub_homeassistant()
 
-from waviot.api import WaviotApi, WaviotAuthError, WaviotTwoFactorError  # noqa: E402
+from waviot_cabinet.api import WaviotApi, WaviotAuthError, WaviotTwoFactorError  # noqa: E402
 
 
 async def main() -> int:

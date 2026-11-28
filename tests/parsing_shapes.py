@@ -15,7 +15,7 @@ from live_stubs import stub_homeassistant  # noqa: E402
 
 stub_homeassistant()
 
-from waviot.parsing import build_devices  # noqa: E402
+from waviot_cabinet.parsing import build_devices  # noqa: E402
 
 MODEM_ID = "70B3B9"
 NOW = 1700003600

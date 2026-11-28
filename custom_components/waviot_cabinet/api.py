@@ -27,6 +27,13 @@ API_KEY_FALLBACK_RE = re.compile(r"<b>([0-9a-f]{32})</b>")
 ELEMENT_ID_RE = re.compile(r"elementId\s*=\s*(\d+)")
 MFA_RE = re.compile(r'"MFA"\s*:\s*"?1"?')
 
+# What the cabinet answers when the key in the request is revoked or wrong.
+KEY_REJECTED_RE = re.compile(
+    r"(incorrect api key|invalid api key|bad key|unauthoriz|not authorized|"
+    r"access denied|permission|неправильн\w* ключ|ключ не)",
+    re.IGNORECASE,
+)
+
 
 class WaviotError(Exception):
     """Base error for the integration."""
@@ -53,11 +60,13 @@ class WaviotApi:
         login: str | None = None,
         password: str | None = None,
         api_key: str | None = None,
+        base_url: str | None = None,
     ) -> None:
         self._session = session
         self._login = login
         self._password = password
         self._api_key = api_key
+        self._base_url = base_url or API_BASE
         self._element_id: int | None = None
         self._signed_in = False
 
@@ -75,6 +84,28 @@ class WaviotApi:
         """The cabinet does not always declare its charset, so decode explicitly."""
         return (await resp.read()).decode("utf-8", errors="replace")
 
+    async def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        data: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, str, dict[str, str]]:
+        """Perform one cabinet request, turning transport failures into WaviotError.
+
+        Without this an unreachable cabinet raises aiohttp.ClientError or
+        TimeoutError, which callers do not know how to report.
+        """
+        try:
+            async with self._session.request(
+                method, url, params=params, data=data, headers=headers or {}
+            ) as resp:
+                return resp.status, await self._text(resp), dict(resp.cookies)
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise WaviotApiError(f"Could not reach the WAVIoT cabinet: {err}") from err
+
     async def authenticate(self) -> None:
         """Log in to the cabinet and pick up the personal API key."""
         if self._api_key:
@@ -83,14 +114,14 @@ class WaviotApi:
         if not self._login or not self._password:
             raise WaviotAuthError("Neither login/password nor API key was provided")
 
-        headers = {"Referer": f"{API_BASE}/", "User-Agent": USER_AGENT}
-        async with self._session.post(
-            AUTH_URL, data={"login": self._login, "password": self._password}, headers=headers
-        ) as resp:
-            body = await self._text(resp)
-            if resp.status >= 400:
-                raise WaviotAuthError(f"Authentication failed with HTTP {resp.status}")
-            session_cookies = resp.cookies
+        status, body, cookies = await self._request(
+            "POST",
+            AUTH_URL,
+            data={"login": self._login, "password": self._password},
+            headers={"Referer": f"{self._base_url}/", "User-Agent": USER_AGENT},
+        )
+        if status >= 400:
+            raise WaviotAuthError(f"Authentication failed with HTTP {status}")
 
         if "sendPin" in body or "use2fa" in body or MFA_RE.search(body):
             raise WaviotTwoFactorError(
@@ -100,7 +131,7 @@ class WaviotApi:
 
         # An unauthenticated answer still carries a JWT cookie and a small
         # window.USER object; only a real session reports the account ids.
-        if "WAVIOT_JWT" not in session_cookies or '"lk_id"' not in body:
+        if "WAVIOT_JWT" not in cookies or '"lk_id"' not in body:
             raise WaviotAuthError("Invalid login or password")
 
         self._signed_in = True
@@ -116,10 +147,9 @@ class WaviotApi:
 
     async def fetch_api_key(self) -> str:
         """Read the personal API key from https://lk.waviot.ru/api/."""
-        async with self._session.get(f"{API_BASE}/api/") as resp:
-            body = await self._text(resp)
-            if resp.status >= 400:
-                raise WaviotAuthError(f"Could not read the API key (HTTP {resp.status})")
+        status, body, _ = await self._request("GET", f"{self._base_url}/api/")
+        if status >= 400:
+            raise WaviotAuthError(f"Could not read the API key (HTTP {status})")
 
         match = API_KEY_RE.search(body) or API_KEY_FALLBACK_RE.search(body)
         if not match:
@@ -136,12 +166,11 @@ class WaviotApi:
         cookies we fall back to the deepest leaf of the element tree.
         """
         if self._signed_in:
-            async with self._session.get(f"{API_BASE}/") as resp:
-                body = await self._text(resp)
-                if resp.status < 400:
-                    match = ELEMENT_ID_RE.search(body)
-                    if match:
-                        return int(match.group(1))
+            status, body, _ = await self._request("GET", f"{self._base_url}/")
+            if status < 400:
+                match = ELEMENT_ID_RE.search(body)
+                if match:
+                    return int(match.group(1))
 
         if self._api_key:
             tree = (await self.call("api.tree/get_tree/")).get("tree") or {}
@@ -152,15 +181,20 @@ class WaviotApi:
         raise WaviotApiError("Could not determine the home element id")
 
     async def call(self, method: str, params: dict[str, Any] | None = None) -> dict:
-        """Call api.<TYPE>/<METHOD> and return the decoded JSON payload."""
+        """Call api.<TYPE>/<METHOD> and return the decoded JSON payload.
+
+        A rejected key is reported as WaviotAuthError, so the coordinator can
+        hand the entry to the reauth flow instead of failing every poll.
+        """
         request_params = dict(params or {})
         if self._api_key:
             request_params["key"] = self._api_key
 
-        async with self._session.get(f"{API_BASE}/{method}", params=request_params) as resp:
-            body = await self._text(resp)
-            if resp.status >= 400:
-                raise WaviotApiError(f"{method} returned HTTP {resp.status}: {body[:200]}")
+        status, body, _ = await self._request("GET", f"{self._base_url}/{method}", params=request_params)
+        if status in (401, 403):
+            raise WaviotAuthError(f"{method}: the cabinet rejected the API key (HTTP {status})")
+        if status >= 400:
+            raise WaviotApiError(f"{method} returned HTTP {status}: {body[:200]}")
 
         try:
             payload = json.loads(body)
@@ -168,7 +202,10 @@ class WaviotApi:
             raise WaviotApiError(f"{method} returned a non-JSON response") from err
 
         if payload.get("status") == "error":
-            raise WaviotApiError(f"{method}: {payload.get('message', 'unknown error')}")
+            message = str(payload.get("message") or "unknown error")
+            if KEY_REJECTED_RE.search(message):
+                raise WaviotAuthError(f"{method}: {message}")
+            raise WaviotApiError(f"{method}: {message}")
 
         return payload
 

@@ -1,9 +1,9 @@
-"""Config flow for the WAVIoT integration."""
+"""Config flow for the WAVIoT cabinet integration."""
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Mapping
 
 import aiohttp
 import voluptuous as vol
@@ -40,6 +40,37 @@ class WaviotConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    _reauth_login: str = ""
+
+    async def _async_validate_credentials(
+        self,
+        login: str | None,
+        password: str | None,
+        api_key: str | None,
+        element_id_raw: str | None = None,
+    ) -> tuple[str, int, bool]:
+        """Authenticate and report the personal key, the element and whether meters exist."""
+        async with aiohttp.ClientSession(
+            headers={"User-Agent": USER_AGENT}
+        ) as session:
+            api = WaviotApi(session, login, password, api_key)
+            await api.authenticate()
+
+            if element_id_raw:
+                element_id = int(element_id_raw)
+            elif api.element_id:
+                element_id = api.element_id
+            else:
+                element_id = await api.home_element_id()
+
+            info = await api.element_info(element_id)
+            meters = [
+                device
+                for device in (info.get("devices") or {}).values()
+                if isinstance(device, dict) and device.get("registrators")
+            ]
+            return str(api.api_key), element_id, bool(meters)
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -55,29 +86,11 @@ class WaviotConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "missing_credentials"
             else:
                 try:
-                    async with aiohttp.ClientSession(
-                        headers={"User-Agent": USER_AGENT}
-                    ) as session:
-                        api = WaviotApi(
-                            session, login or None, password or None, api_key or None
-                        )
-                        await api.authenticate()
-
-                        if element_id_raw:
-                            element_id = int(element_id_raw)
-                        elif api.element_id:
-                            element_id = api.element_id
-                        else:
-                            element_id = await api.home_element_id()
-
-                        info = await api.element_info(element_id)
-                        meters = [
-                            device
-                            for device in (info.get("devices") or {}).values()
-                            if device.get("registrators")
-                        ]
-                        if not meters:
-                            errors["base"] = "no_meters"
+                    key, element_id, has_meters = await self._async_validate_credentials(
+                        login or None, password or None, api_key or None, element_id_raw or None
+                    )
+                    if not has_meters:
+                        errors["base"] = "no_meters"
                 except WaviotTwoFactorError:
                     errors["base"] = "two_factor"
                 except WaviotAuthError:
@@ -97,7 +110,7 @@ class WaviotConfigFlow(ConfigFlow, domain=DOMAIN):
                     data={
                         CONF_LOGIN: login,
                         CONF_PASSWORD: password,
-                        CONF_API_KEY: api.api_key,
+                        CONF_API_KEY: key,
                         CONF_ELEMENT_ID: element_id,
                         CONF_POLL_INTERVAL: DEFAULT_POLL_INTERVAL_MINUTES,
                     },
@@ -109,8 +122,76 @@ class WaviotConfigFlow(ConfigFlow, domain=DOMAIN):
                 {
                     vol.Required(CONF_LOGIN): TextSelector(),
                     vol.Optional(CONF_PASSWORD): PASSWORD_SELECTOR,
-                    vol.Optional(CONF_API_KEY): TextSelector(),
+                    vol.Optional(CONF_API_KEY): PASSWORD_SELECTOR,
                     vol.Optional(CONF_ELEMENT_ID): TextSelector(),
+                }
+            ),
+            errors=errors,
+        )
+
+    def _reauth_entry(self) -> ConfigEntry:
+        """The entry being re-authenticated, on both Home Assistant generations."""
+        entry = getattr(self, "config_entry", None)
+        if entry is None:
+            context = self.context or {}
+            entry_id = (
+                context["entry_id"] if isinstance(context, Mapping) else context.entry_id
+            )
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+        return entry
+
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
+        """The cabinet stopped accepting the stored credentials."""
+        self._reauth_login = entry_data.get(CONF_LOGIN) or ""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            password = (user_input.get(CONF_PASSWORD) or "").strip()
+            api_key = (user_input.get(CONF_API_KEY) or "").strip()
+
+            if not password and not api_key:
+                errors["base"] = "missing_credentials"
+            else:
+                try:
+                    key, element_id, has_meters = await self._async_validate_credentials(
+                        self._reauth_login or None, password or None, api_key or None
+                    )
+                    if not has_meters:
+                        errors["base"] = "no_meters"
+                except WaviotTwoFactorError:
+                    errors["base"] = "two_factor"
+                except WaviotAuthError:
+                    errors["base"] = "invalid_auth"
+                except WaviotError as err:
+                    _LOGGER.debug("WAVIoT reauth failed: %s", err)
+                    errors["base"] = "cannot_connect"
+
+            if not errors:
+                entry = self._reauth_entry()
+                self.hass.config_entries.async_update_entry(
+                    entry,
+                    data={
+                        **entry.data,
+                        CONF_LOGIN: self._reauth_login,
+                        CONF_PASSWORD: password,
+                        CONF_API_KEY: key,
+                        CONF_ELEMENT_ID: element_id,
+                    },
+                )
+                await self.hass.config_entries.async_reload(entry.entry_id)
+                return self.async_abort(reason="reauth_successful")
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_PASSWORD): PASSWORD_SELECTOR,
+                    vol.Optional(CONF_API_KEY): PASSWORD_SELECTOR,
                 }
             ),
             errors=errors,

@@ -1,10 +1,14 @@
-# Home Assistant интеграция WAVIoT (lk.waviot.ru)
+# Home Assistant интеграция WAVIoT Cabinet (lk.waviot.ru)
 
 <img src="assets/waviot.png" width="128" alt="Логотип WAVIoT">
 
 Custom-интеграция для [Home Assistant](https://www.home-assistant.io/), которая
 читает показания электросчётчика из личного кабинета WAVIoT
 ([lk.waviot.ru](https://lk.waviot.ru)) — там же, где их показывает ваш дом.
+
+Домен интеграции — `waviot_cabinet`, папка `custom_components/waviot_cabinet`.
+Домен `waviot` в каталоге уже занят другими интеграциями WAVIoT, поэтому здесь
+он свой: обе установки могут сосуществовать в одном Home Assistant.
 
 ## Что она делает
 
@@ -35,16 +39,16 @@ Custom-интеграция для [Home Assistant](https://www.home-assistant.i
 
 ### Вручную
 
-1. Скопируйте папку `custom_components/waviot` в
-   `config/custom_components/waviot` вашего Home Assistant.
+1. Скопируйте папку `custom_components/waviot_cabinet` в
+   `config/custom_components/waviot_cabinet` вашего Home Assistant.
 2. Перезапустите HA.
-3. Настройки → Устройства и службы → Интеграции → Добавить интеграцию → **WAVIoT**.
+3. Настройки → Устройства и службы → Интеграции → Добавить интеграцию → **WAVIoT Cabinet**.
 4. Введите логин и пароль от личного кабинета.
 
 ### Через HACS
 
 Добавьте этот репозиторий как пользовательский (custom) репозиторий в HACS
-(тип «Integration») и установите «WAVIoT».
+(тип «Integration») и установите «WAVIoT Cabinet».
 
 ## Параметры при добавлении
 
@@ -68,11 +72,17 @@ Custom-интеграция для [Home Assistant](https://www.home-assistant.i
 Если в кабинете включён SMS-код при входе, автоматический вход невозможен:
 интеграция сообщит об этом и предложит отключить 2FA или ввести ключ API.
 
+## Если ключ отозвали
+
+Кабинет отвечает `Incorrect API key`, и Home Assistant открывает шаг повторной
+авторизации: можно ввести новый пароль (ключ будет получен заново) или новый
+ключ API со страницы `https://lk.waviot.ru/api/`.
+
 ## Пример: суточный расход в Lovelace
 
 ```yaml
-sensor.waviot_8146244_total_energy          # 46461.016 kWh
-sensor.waviot_8146244_total_energy_per_day  # 9.566 kWh за сутки
+sensor.waviot_cabinet_8146244_total_energy          # 46461.016 kWh
+sensor.waviot_cabinet_8146244_total_energy_per_day  # 9.566 kWh за сутки
 ```
 
 ## API, который использует интеграция

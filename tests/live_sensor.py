@@ -23,9 +23,9 @@ from live_stubs import stub_homeassistant  # noqa: E402
 
 stub_homeassistant()
 
-from waviot.api import WaviotApi  # noqa: E402
-from waviot.const import DOMAIN, USER_AGENT  # noqa: E402
-from waviot.coordinator import WaviotCoordinator  # noqa: E402
+from waviot_cabinet.api import WaviotApi  # noqa: E402
+from waviot_cabinet.const import DOMAIN, USER_AGENT  # noqa: E402
+from waviot_cabinet.coordinator import WaviotCoordinator  # noqa: E402
 
 
 class _Entity:
@@ -119,7 +119,7 @@ async def main() -> int:
         coordinator.data = await coordinator._async_update_data()
         hass.data[DOMAIN][entry.entry_id] = coordinator
 
-        import waviot.sensor as sensor  # noqa: E402
+        import waviot_cabinet.sensor as sensor  # noqa: E402
 
         added = []
         await sensor.async_setup_entry(hass, entry, lambda entities: added.extend(entities))
