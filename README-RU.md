@@ -6,10 +6,6 @@ Custom-интеграция для [Home Assistant](https://www.home-assistant.i
 читает показания электросчётчика из личного кабинета WAVIoT
 ([lk.waviot.ru](https://lk.waviot.ru)) — там же, где их показывает ваш дом.
 
-Домен интеграции — `waviot_cabinet`, папка `custom_components/waviot_cabinet`.
-Домен `waviot` в каталоге уже занят другими интеграциями WAVIoT, поэтому здесь
-он свой: обе установки могут сосуществовать в одном Home Assistant.
-
 ## Что она делает
 
 - Вход в личный кабинет по логину и паролю (e-mail или телефон) — данные
